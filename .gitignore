@@ -1,0 +1,33 @@
+# ===== 数据集 =====
+data/
+datasets/
+dataset/
+
+# ===== 模型权重 =====
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.bin
+
+# ===== 训练输出 =====
+runs/
+logs/
+outputs/
+checkpoints/
+checkpoint/
+
+# ===== python =====
+__pycache__/
+*.pyc
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+
+# ===== 其他大文件 =====
+*.zip
+*.tar
+*.npy
+*.npz
+*.h5
