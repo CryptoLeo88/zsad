@@ -1,0 +1,11 @@
+python test_visual_prompt_gate.py ^
+  --dataset mvtec ^
+  --data_path D:\data\mvtec ^
+  --save_path .\results\hsf_visual_prompt_gate ^
+  --checkpoint_path .\checkpoints\hsf_visual_prompt_gate\epoch_15.pth ^
+  --features_list 6 12 18 24 ^
+  --image_size 518 ^
+  --depth 9 ^
+  --n_ctx 12 ^
+  --t_n_ctx 4 ^
+  --metrics image-pixel-level
