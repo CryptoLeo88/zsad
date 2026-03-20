@@ -2,28 +2,51 @@
   "title": "Qualitative segmentation results",
   "auto_select_max_images": 8,
   "images": [
-    {"path": "./data/mvtec/capsule/test/crack/000.png"},
-    {"path": "./data/mvtec/hazelnut/test/hole/000.png"},
-    {"path": "./data/mvtec/cable/test/cut_outer_insulation/000.png"},
-    {"path": "./data/mvtec/zipper/test/rough/000.png"},
-    {"path": "./data/visa/candle/test/crack/000.JPG"},
-    {"path": "./data/visa/cashew/test/hole/000.JPG"}
+    {
+      "path": "./data/mvtec/capsule/test/crack/000.png",
+      "label": "capsule"
+    },
+    {
+      "path": "./data/mvtec/hazelnut/test/hole/000.png",
+      "label": "hazelnut"
+    },
+    {
+      "path": "./data/mvtec/metal_nut/test/color/006.png",
+      "label": "metal_nut"
+    },
+    {
+      "path": "./data/visa/candle/Data/Images/Anomaly/001.JPG",
+      "label": "candle"
+    },
+    {
+      "path": "./data/visa/cashew/Data/Images/Anomaly/002.JPG",
+      "label": "cashew"
+    },
+    {
+      "path": "./data/visa/pcb1/Data/Images/Anomaly/000.JPG",
+      "label": "pcb1"
+    }
   ],
   "methods": [
     {
+      "name": "WinCLIP",
+      "type": "baseline",
+      "checkpoint": "./checkpoint/noForzen/hsf/epoch_1.pth"
+    },
+    {
+      "name": "VAND",
+      "type": "visual_prompt",
+      "checkpoint": "./checkpoint/noForzen/hsf_visual_prompt/epoch_4.pth"
+    },
+    {
       "name": "AnomalyCLIP",
       "type": "baseline",
-      "checkpoint": "./checkpoints/baseline/epoch_15.pth"
+      "checkpoint": "./checkpoint/noForzen/epoch_1.pth"
     },
     {
-      "name": "VPA",
-      "type": "visual_prompt",
-      "checkpoint": "./checkpoints/hsf_visual_prompt/epoch_15.pth"
-    },
-    {
-      "name": "VPA+Gate",
+      "name": "Ours",
       "type": "visual_prompt_gate",
-      "checkpoint": "./checkpoints/hsf_visual_prompt_gate/epoch_15.pth"
+      "checkpoint": "./checkpoint/noForzen/hsf_visual_prompt_gate/epoch_15.pth"
     }
   ]
 }

@@ -160,23 +160,60 @@ def load_font(size):
     return ImageFont.load_default()
 
 
-def build_figure(images, overlays, row_labels, col_labels, output_path, title=None):
+def infer_column_label(path):
+    p = Path(path)
+    parts = [part for part in p.parts if part not in {".", ".."}]
+    lower_parts = [part.lower() for part in parts]
+
+    if "mvtec" in lower_parts:
+        idx = lower_parts.index("mvtec")
+        if len(parts) > idx + 3:
+            obj = parts[idx + 1]
+            defect = parts[idx + 3]
+            return f"{obj}/{defect}"
+
+    if "visa" in lower_parts:
+        idx = lower_parts.index("visa")
+        if len(parts) > idx + 1:
+            obj = parts[idx + 1]
+            for part in reversed(parts):
+                if part.lower() not in {"images", "image", "bad", "good", "test", "data"} and "." not in part:
+                    defect = part
+                    if defect != obj:
+                        return f"{obj}/{defect}"
+            return obj
+
+    if len(parts) >= 4:
+        return f"{parts[-4]}/{parts[-2]}"
+    if len(parts) >= 2:
+        return f"{parts[-2]}/{p.stem}"
+    return p.stem
+
+
+def build_figure(overlays, row_labels, col_labels, output_path, title=None):
     cell_w = 150
     cell_h = 150
-    left_pad = 135
     top_pad = 80
     title_h = 60 if title else 20
     margin = 25
     rows = len(row_labels)
     cols = len(col_labels)
-    canvas_w = left_pad + cols * cell_w + margin
-    canvas_h = title_h + top_pad + rows * cell_h + margin
 
-    canvas = Image.new("RGB", (canvas_w, canvas_h), "white")
-    draw = ImageDraw.Draw(canvas)
     title_font = load_font(28)
     label_font = load_font(20)
     small_font = load_font(16)
+
+    probe = Image.new("RGB", (10, 10), "white")
+    probe_draw = ImageDraw.Draw(probe)
+    row_widths = [probe_draw.textbbox((0, 0), label, font=label_font)[2] for label in row_labels]
+    col_widths = [probe_draw.textbbox((0, 0), label, font=small_font)[2] for label in col_labels]
+
+    left_pad = max(135, max(row_widths, default=0) + 40)
+    canvas_w = left_pad + cols * cell_w + margin
+    canvas_h = title_h + top_pad + rows * cell_h + margin + 10
+
+    canvas = Image.new("RGB", (canvas_w, canvas_h), "white")
+    draw = ImageDraw.Draw(canvas)
 
     if title:
         draw.text((canvas_w // 2, 20), title, fill=(20, 20, 20), font=title_font, anchor="ma")
@@ -248,7 +285,8 @@ def main():
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    image_paths = [item["path"] if isinstance(item, dict) else item for item in cfg["images"]]
+    image_items = cfg["images"]
+    image_paths = [item["path"] if isinstance(item, dict) else item for item in image_items]
     if cfg.get("auto_select_max_images"):
         image_paths = suggest_diverse_paths(image_paths, cfg["auto_select_max_images"])
 
@@ -257,11 +295,23 @@ def main():
     preprocess_args = argparse.Namespace(image_size=args.image_size)
     preprocess, _ = get_transform(preprocess_args)
 
+    selected_items = []
     for path in image_paths:
+        matched = None
+        for item in image_items:
+            candidate = item["path"] if isinstance(item, dict) else item
+            if candidate == path:
+                matched = item
+                break
+        selected_items.append(matched if matched is not None else path)
+
+    for item in selected_items:
+        path = item["path"] if isinstance(item, dict) else item
         p = Path(path)
-        label = p.stem
-        if len(p.parts) >= 3:
-            label = f"{p.parts[-3]}/{p.stem}"
+        if isinstance(item, dict) and item.get("label"):
+            label = item["label"]
+        else:
+            label = infer_column_label(path)
         col_labels.append(label)
         img = Image.open(path).convert("RGB")
         input_row.append(img)
@@ -292,7 +342,7 @@ def main():
         overlays.append(row_images)
         row_labels.append(model_cfg["name"])
 
-    build_figure(overlays[0], overlays, row_labels, col_labels, args.output, cfg.get("title"))
+    build_figure(overlays, row_labels, col_labels, args.output, cfg.get("title"))
     print(args.output)
 
 
