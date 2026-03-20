@@ -1,0 +1,29 @@
+{
+  "title": "Qualitative segmentation results",
+  "auto_select_max_images": 8,
+  "images": [
+    {"path": "./data/mvtec/capsule/test/crack/000.png"},
+    {"path": "./data/mvtec/hazelnut/test/hole/000.png"},
+    {"path": "./data/mvtec/cable/test/cut_outer_insulation/000.png"},
+    {"path": "./data/mvtec/zipper/test/rough/000.png"},
+    {"path": "./data/visa/candle/test/crack/000.JPG"},
+    {"path": "./data/visa/cashew/test/hole/000.JPG"}
+  ],
+  "methods": [
+    {
+      "name": "AnomalyCLIP",
+      "type": "baseline",
+      "checkpoint": "./checkpoints/baseline/epoch_15.pth"
+    },
+    {
+      "name": "VPA",
+      "type": "visual_prompt",
+      "checkpoint": "./checkpoints/hsf_visual_prompt/epoch_15.pth"
+    },
+    {
+      "name": "VPA+Gate",
+      "type": "visual_prompt_gate",
+      "checkpoint": "./checkpoints/hsf_visual_prompt_gate/epoch_15.pth"
+    }
+  ]
+}
