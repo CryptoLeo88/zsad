@@ -8,30 +8,35 @@ import os
 
 def generate_class_info(dataset_name):
     class_name_map_class_id = {}
-    if dataset_name == 'mvtec':
+    dataset_key = dataset_name.lower()
+
+    if dataset_key in {'mvtec', 'mvtec-ad'}:
         obj_list = ['carpet', 'bottle', 'hazelnut', 'leather', 'cable', 'capsule', 'grid', 'pill',
                     'transistor', 'metal_nut', 'screw', 'toothbrush', 'zipper', 'tile', 'wood']
-    elif dataset_name == 'visa':
+    elif dataset_key == 'visa':
         obj_list = ['candle', 'capsules', 'cashew', 'chewinggum', 'fryum', 'macaroni1', 'macaroni2',
                     'pcb1', 'pcb2', 'pcb3', 'pcb4', 'pipe_fryum']
-    elif dataset_name == 'mpdd':
+    elif dataset_key == 'mpdd':
         obj_list = ['bracket_black', 'bracket_brown', 'bracket_white', 'connector', 'metal_plate', 'tubes']
-    elif dataset_name == 'btad':
+    elif dataset_key == 'btad':
         obj_list = ['01', '02', '03']
-    elif dataset_name == 'DAGM':
+    elif dataset_key == 'dagm':
         obj_list = ['Class1','Class2','Class3','Class4','Class5','Class6','Class7','Class8','Class9','Class10']
-    elif dataset_name == 'SDD':
+    elif dataset_key in {'sdd', 'kolektorsdd'}:
         obj_list = ['electrical commutators']
-    elif dataset_name == 'DTD':
+    elif dataset_key in {'dtd', 'dtd-synthetic'}:
         obj_list = ['Woven_001', 'Woven_127', 'Woven_104', 'Stratified_154', 'Blotchy_099', 'Woven_068', 'Woven_125', 'Marbled_078', 'Perforated_037', 'Mesh_114', 'Fibrous_183', 'Matted_069']
-    elif dataset_name == 'colon':
+    elif dataset_key == 'colon':
         obj_list = ['colon']
-    elif dataset_name == 'ISBI':
+    elif dataset_key == 'isbi':
         obj_list = ['skin']
-    elif dataset_name == 'Chest':
+    elif dataset_key == 'chest':
         obj_list = ['chest']
-    elif dataset_name == 'thyroid':
+    elif dataset_key == 'thyroid':
         obj_list = ['thyroid']
+    else:
+        raise ValueError(f"Unsupported dataset_name: {dataset_name}")
+
     for k, index in zip(obj_list, range(len(obj_list))):
         class_name_map_class_id[k] = index
 
@@ -42,11 +47,19 @@ class Dataset(data.Dataset):
         self.root = root
         self.transform = transform
         self.target_transform = target_transform
+        self.requested_mode = mode
         self.mode = mode
         self.data_all = []
         meta_info = json.load(open(f'{self.root}/meta.json', 'r'))
-        name = self.root.split('/')[-1]
-        meta_info = meta_info[mode]
+        if mode not in meta_info:
+            if 'train' in meta_info:
+                self.mode = 'train'
+            elif 'test' in meta_info:
+                self.mode = 'test'
+            else:
+                self.mode = next(iter(meta_info.keys()))
+            print(f"[Dataset] split '{mode}' not found in {self.root}/meta.json, fallback to '{self.mode}'")
+        meta_info = meta_info[self.mode]
 
         self.cls_names = list(meta_info.keys())
         for cls_name in self.cls_names:
@@ -89,5 +102,3 @@ class Dataset(data.Dataset):
                         'img_path': os.path.join(self.root, img_path), "cls_id": self.class_name_map_class_id[cls_name], "llm_embedding": llm_embedding}
         return {'img': img, 'img_mask': img_mask, 'cls_name': cls_name, 'anomaly': anomaly,
                 'img_path': os.path.join(self.root, img_path), "cls_id": self.class_name_map_class_id[cls_name]}
-
-
