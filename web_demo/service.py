@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -427,7 +427,7 @@ class OpenVocabularyDefectSystem:
         blended = image_rgb.astype(np.float32) * 0.58 + color * 255.0 * 0.42
         return np.uint8(np.clip(blended, 0, 255))
 
-    def _extract_regions(self, heat: np.ndarray, image_shape: tuple[int, int]) -> List[Dict[str, Any]]:
+    def _extract_regions(self, heat: np.ndarray, image_shape: Tuple[int, int]) -> List[Dict[str, Any]]:
         threshold = max(0.45, float(np.percentile(heat, 90)))
         binary = heat >= threshold
         visited = np.zeros_like(binary, dtype=bool)
@@ -466,7 +466,7 @@ class OpenVocabularyDefectSystem:
         heat: np.ndarray,
         regions: List[Dict[str, Any]],
         score: float,
-    ) -> tuple[List[str], bool, str]:
+    ) -> Tuple[List[str], bool, str]:
         if not defect_terms:
             defect_terms = self.vocab_store.term_names()
         if score < 0.2:
