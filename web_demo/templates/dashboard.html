@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}系统总览{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Dashboard</p>
+    <h2>系统总览</h2>
+    <p>统一查看检测记录、训练任务、词汇库规模与系统运行状态。</p>
+  </div>
+</section>
+<section class="card-grid stats-grid">
+  <article class="card stat-card"><span>检测记录</span><strong>{{ dashboard.history_count }}</strong></article>
+  <article class="card stat-card"><span>异常样本</span><strong>{{ dashboard.abnormal_count }}</strong></article>
+  <article class="card stat-card"><span>训练任务</span><strong>{{ dashboard.job_count }}</strong></article>
+  <article class="card stat-card"><span>词汇条目</span><strong>{{ dashboard.vocab_count }}</strong></article>
+</section>
+<section class="split-grid">
+  <article class="card">
+    <div class="card-head"><h3>最近检测</h3><a href="{{ url_for('history') }}">查看全部</a></div>
+    <table>
+      <thead><tr><th>时间</th><th>工位</th><th>结论</th><th>评分</th></tr></thead>
+      <tbody>
+        {% for item in dashboard.recent_history %}
+        <tr><td>{{ item.created_at }}</td><td>{{ item.scene_name }}</td><td>{{ item.decision }}</td><td>{{ item.score }}</td></tr>
+        {% else %}
+        <tr><td colspan="4">暂无检测记录。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <article class="card">
+    <div class="card-head"><h3>最近训练</h3><a href="{{ url_for('training') }}">进入训练中心</a></div>
+    <table>
+      <thead><tr><th>任务</th><th>方案</th><th>状态</th></tr></thead>
+      <tbody>
+        {% for item in dashboard.recent_jobs %}
+        <tr><td><a href="{{ url_for('training_detail', job_id=item.id) }}">{{ item.name }}</a></td><td>{{ item.profile_label }}</td><td><span class="status {{ item.status }}">{{ item.status }}</span></td></tr>
+        {% else %}
+        <tr><td colspan="3">暂无训练任务。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+<section class="card">
+  <div class="card-head"><h3>功能分块</h3></div>
+  <div class="tile-grid">
+    <div class="tile"><strong>检测中心</strong><p>负责图像上传、缺陷检测和结果可视化。</p></div>
+    <div class="tile"><strong>训练中心</strong><p>负责训练任务创建、执行与日志追踪。</p></div>
+    <div class="tile"><strong>词汇库管理</strong><p>负责开放词汇维护与场景适配扩展。</p></div>
+    <div class="tile"><strong>检测历史</strong><p>负责记录归档、回看与质量追溯。</p></div>
+  </div>
+</section>
+{% endblock %}

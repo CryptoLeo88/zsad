@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}词汇库管理{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Vocabulary</p>
+    <h2>词汇库管理</h2>
+    <p>管理开放词汇缺陷条目，使系统适配不同产品、不同材质和不同质检场景。</p>
+  </div>
+</section>
+<section class="split-grid">
+  <article class="card">
+    <div class="card-head"><h3>新增词汇</h3></div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="add" />
+      <label><span>缺陷名称</span><input type="text" name="term" placeholder="例如：压痕" /></label>
+      <label><span>分类</span><input type="text" name="category" placeholder="例如：成形异常" /></label>
+      <label><span>说明</span><textarea name="description" rows="4" placeholder="说明该缺陷的外观特征和适用场景"></textarea></label>
+      <button type="submit">保存词汇</button>
+    </form>
+  </article>
+  <article class="card">
+    <div class="card-head"><h3>词汇条目</h3></div>
+    <table>
+      <thead><tr><th>名称</th><th>分类</th><th>说明</th><th>操作</th></tr></thead>
+      <tbody>
+        {% for item in terms %}
+        <tr>
+          <td>{{ item.term }}</td>
+          <td>{{ item.category }}</td>
+          <td>{{ item.description }}</td>
+          <td>
+            <form method="post">
+              <input type="hidden" name="action" value="delete" />
+              <input type="hidden" name="term_id" value="{{ item.id }}" />
+              <button type="submit" class="secondary">删除</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">暂无词汇。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+{% endblock %}

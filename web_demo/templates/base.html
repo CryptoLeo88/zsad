@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}开放词汇工业缺陷检测系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="brand-kicker">Industrial AI Console</p>
+          <h1>开放词汇缺陷检测</h1>
+          <span class="mode-badge">{{ "真实模型" if runtime_mode == "real" else "演示模式" }}</span>
+        </div>
+        <nav class="nav">
+          <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('dashboard') }}">系统总览</a>
+          <a class="{{ 'active' if active_page == 'inspect' else '' }}" href="{{ url_for('inspect') }}">检测中心</a>
+          <a class="{{ 'active' if active_page == 'training' else '' }}" href="{{ url_for('training') }}">训练中心 <span>{{ sidebar_counts.jobs }}</span></a>
+          <a class="{{ 'active' if active_page == 'vocabulary' else '' }}" href="{{ url_for('vocabulary') }}">词汇库管理 <span>{{ sidebar_counts.vocab }}</span></a>
+          <a class="{{ 'active' if active_page == 'history' else '' }}" href="{{ url_for('history') }}">检测历史 <span>{{ sidebar_counts.history }}</span></a>
+        </nav>
+        <div class="sidebar-note">
+          <p>管理端已按模块拆分页面，方便独立展示检测、训练、词汇管理和历史追溯。</p>
+        </div>
+      </aside>
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

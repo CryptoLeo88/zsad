@@ -36,3 +36,6 @@ Thumbs.db
 # ===== Web demo runtime =====
 web_demo/uploads/
 web_demo/static/generated/
+!web_demo/data/
+!web_demo/data/*.json
+web_demo/data/logs/

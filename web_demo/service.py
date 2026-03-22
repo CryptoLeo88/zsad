@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +16,23 @@ from PIL import Image, ImageFilter
 def _ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _read_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _slugify(text: str) -> str:
@@ -83,9 +102,7 @@ class RealAnomalyClipEngine:
         self.model.to(self.device)
         self.model.visual.DAPM_replace(DPAM_layer=20)
         prompts, tokenized_prompts, compound_prompts_text, _, _ = self.prompt_learner(cls_id=None)
-        text_features = self.model.encode_text_learn(
-            prompts, tokenized_prompts, compound_prompts_text
-        ).float()
+        text_features = self.model.encode_text_learn(prompts, tokenized_prompts, compound_prompts_text).float()
         text_features = torch.stack(torch.chunk(text_features, dim=0, chunks=2), dim=1)
         self.text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         args = SimpleNamespace(image_size=config.image_size)
@@ -113,17 +130,12 @@ class RealAnomalyClipEngine:
                     )
                     anomaly_map = (similarity_map[..., 1] + 1 - similarity_map[..., 0]) / 2.0
                     anomaly_map_list.append(anomaly_map)
-
             stacked = self.torch.stack(anomaly_map_list).sum(dim=0)
             smoothed = self.torch.stack(
                 [self.torch.from_numpy(self.gaussian_filter(i, sigma=self.config.sigma)) for i in stacked.cpu()],
                 dim=0,
             )
-        return {
-            "score": image_score,
-            "anomaly_map": smoothed[0].numpy(),
-            "mode": "real",
-        }
+        return {"score": image_score, "anomaly_map": smoothed[0].numpy(), "mode": "real"}
 
 
 class DemoDefectEngine:
@@ -136,29 +148,181 @@ class DemoDefectEngine:
         grad_y, grad_x = np.gradient(gray)
         gradient = np.hypot(grad_x, grad_y).astype(np.float32)
         chroma = np.std(rgb.astype(np.float32), axis=2)
-        heat = (
-            0.45 * _normalize_map(detail.astype(np.float32))
-            + 0.35 * _normalize_map(gradient.astype(np.float32))
-            + 0.2 * _normalize_map(chroma.astype(np.float32))
-        )
+        heat = 0.45 * _normalize_map(detail) + 0.35 * _normalize_map(gradient) + 0.2 * _normalize_map(chroma)
         heat_image = Image.fromarray(np.uint8(np.clip(heat * 255, 0, 255)))
         heat = np.asarray(heat_image.filter(ImageFilter.GaussianBlur(radius=4)), dtype=np.float32) / 255.0
         score = float(np.clip(np.percentile(heat, 96), 0.0, 1.0))
-        return {
-            "score": score,
-            "anomaly_map": heat,
-            "mode": "demo",
-            "image_rgb": rgb,
+        return {"score": score, "anomaly_map": heat, "mode": "demo"}
+
+
+class VocabularyStore:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        if not self.path.exists():
+            _write_json(self.path, self._defaults())
+
+    def _defaults(self) -> List[Dict[str, Any]]:
+        stamp = "2026-03-22 00:00:00"
+        return [
+            {"id": "scratch01", "term": "划痕", "category": "表面损伤", "description": "适用于细长线状缺陷", "created_at": stamp},
+            {"id": "crack01", "term": "裂纹", "category": "结构损伤", "description": "适用于断裂与开缝类缺陷", "created_at": stamp},
+            {"id": "stain01", "term": "污渍", "category": "表面污染", "description": "适用于油污、脏污、附着物", "created_at": stamp},
+            {"id": "hole01", "term": "孔洞", "category": "成形异常", "description": "适用于孔洞、缺口、凹坑", "created_at": stamp},
+        ]
+
+    def list_terms(self) -> List[Dict[str, Any]]:
+        items = _read_json(self.path, [])
+        return sorted(items, key=lambda item: item["created_at"], reverse=True)
+
+    def add_term(self, term: str, category: str, description: str) -> None:
+        items = self.list_terms()
+        items.insert(
+            0,
+            {
+                "id": uuid.uuid4().hex[:8],
+                "term": term.strip(),
+                "category": category.strip() or "未分类",
+                "description": description.strip(),
+                "created_at": _now(),
+            },
+        )
+        _write_json(self.path, items)
+
+    def remove_term(self, term_id: str) -> None:
+        items = [item for item in self.list_terms() if item["id"] != term_id]
+        _write_json(self.path, items)
+
+    def term_names(self) -> List[str]:
+        return [item["term"] for item in self.list_terms()]
+
+
+class TrainingManager:
+    def __init__(self, state_dir: Path, repo_root: Path, worker_path: Path) -> None:
+        self.state_dir = state_dir
+        self.repo_root = repo_root
+        self.worker_path = worker_path
+        self.jobs_path = state_dir / "training_jobs.json"
+        self.logs_dir = _ensure_dir(state_dir / "logs")
+        if not self.jobs_path.exists():
+            _write_json(self.jobs_path, [])
+
+    def profiles(self) -> List[Dict[str, str]]:
+        return [
+            {"id": "baseline", "label": "基础提示学习", "script": "train.py"},
+            {"id": "visual_prompt", "label": "视觉提示对齐训练", "script": "train_visual_prompt.py"},
+            {"id": "gated_fusion", "label": "门控融合训练", "script": "train_visual_prompt_gate.py"},
+            {"id": "mixed_gated_fusion", "label": "混合数据门控融合训练", "script": "train_visual_prompt_gate_mix.py"},
+        ]
+
+    def list_jobs(self) -> List[Dict[str, Any]]:
+        return sorted(_read_json(self.jobs_path, []), key=lambda item: item["created_at"], reverse=True)
+
+    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        for job in self.list_jobs():
+            if job["id"] == job_id:
+                return job
+        return None
+
+    def tail_log(self, job_id: str, max_lines: int = 80) -> str:
+        log_path = self.logs_dir / f"{job_id}.log"
+        if not log_path.exists():
+            return ""
+        lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        return "\n".join(lines[-max_lines:])
+
+    def update_job(self, job_id: str, **changes: Any) -> None:
+        jobs = self.list_jobs()
+        for job in jobs:
+            if job["id"] == job_id:
+                job.update(changes)
+                break
+        _write_json(self.jobs_path, jobs)
+
+    def start_job(self, form: Dict[str, str]) -> str:
+        job_id = uuid.uuid4().hex[:10]
+        profile = form.get("profile", "gated_fusion")
+        job = {
+            "id": job_id,
+            "name": form.get("job_name", "").strip() or f"{profile}-{job_id}",
+            "profile": profile,
+            "profile_label": self._profile_label(profile),
+            "command": self._build_command(profile, form),
+            "train_data_path": form.get("train_data_path", "").strip(),
+            "save_path": form.get("save_path", "").strip(),
+            "dataset": form.get("dataset", "mvtec").strip() or "mvtec",
+            "status": "pending",
+            "created_at": _now(),
+            "started_at": "",
+            "finished_at": "",
+            "message": "训练任务已创建，等待后台执行。",
         }
+        jobs = self.list_jobs()
+        jobs.insert(0, job)
+        _write_json(self.jobs_path, jobs[:30])
+        subprocess.Popen(
+            [sys.executable, str(self.worker_path), job_id],
+            cwd=str(self.repo_root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return job_id
+
+    def _profile_label(self, profile_id: str) -> str:
+        for item in self.profiles():
+            if item["id"] == profile_id:
+                return item["label"]
+        return profile_id
+
+    def _build_command(self, profile: str, form: Dict[str, str]) -> List[str]:
+        script_map = {item["id"]: item["script"] for item in self.profiles()}
+        command = [
+            sys.executable,
+            script_map.get(profile, "train_visual_prompt_gate.py"),
+            "--train_data_path",
+            form.get("train_data_path", "./data/mvtec").strip() or "./data/mvtec",
+            "--save_path",
+            form.get("save_path", "./checkpoint/noForzen/web_demo").strip() or "./checkpoint/noForzen/web_demo",
+            "--dataset",
+            form.get("dataset", "mvtec").strip() or "mvtec",
+            "--epoch",
+            form.get("epoch", "15").strip() or "15",
+            "--batch_size",
+            form.get("batch_size", "8").strip() or "8",
+            "--learning_rate",
+            form.get("learning_rate", "0.001").strip() or "0.001",
+            "--image_size",
+            form.get("image_size", "518").strip() or "518",
+            "--seed",
+            form.get("seed", "111").strip() or "111",
+        ]
+        if profile == "mixed_gated_fusion":
+            command += ["--primary_mode", form.get("primary_mode", "train").strip() or "train"]
+            mix_paths = [item.strip() for item in form.get("mix_data_paths", "").replace("，", ",").split(",") if item.strip()]
+            mix_names = [item.strip() for item in form.get("mix_dataset_names", "").replace("，", ",").split(",") if item.strip()]
+            mix_modes = [item.strip() for item in form.get("mix_modes", "").replace("，", ",").split(",") if item.strip()]
+            if mix_paths:
+                command += ["--mix_data_paths"] + mix_paths
+            if mix_names:
+                command += ["--mix_dataset_names"] + mix_names
+            if mix_modes:
+                command += ["--mix_modes"] + mix_modes
+            command += ["--mix_ratio", form.get("mix_ratio", "0.1").strip() or "0.1"]
+        return command
 
 
 class OpenVocabularyDefectSystem:
     def __init__(self, base_dir: Path) -> None:
         self.base_dir = base_dir.resolve()
-        self.upload_dir = _ensure_dir(base_dir / "uploads")
-        self.output_dir = _ensure_dir(base_dir / "static" / "generated")
-        self.data_dir = _ensure_dir(base_dir / "data")
-        self.history_path = self.data_dir / "history.json"
+        self.repo_root = self.base_dir.parent
+        self.upload_dir = _ensure_dir(self.base_dir / "uploads")
+        self.output_dir = _ensure_dir(self.base_dir / "static" / "generated")
+        self.state_dir = _ensure_dir(self.base_dir / "data")
+        self.history_path = self.state_dir / "history.json"
+        self.vocab_store = VocabularyStore(self.state_dir / "vocabulary.json")
+        self.training = TrainingManager(self.state_dir, self.repo_root, self.base_dir / "training_worker.py")
+        if not self.history_path.exists():
+            _write_json(self.history_path, [])
         checkpoint_path = os.environ.get("ANOMALYCLIP_CHECKPOINT")
         self.config = DetectionConfig(checkpoint_path=checkpoint_path)
         try:
@@ -174,21 +338,17 @@ class OpenVocabularyDefectSystem:
         original_name = _slugify(Path(image_file.filename or "inspection").stem)
         upload_path = self.upload_dir / f"{inspection_id}-{original_name}{ext}"
         image_file.save(upload_path)
-
         raw_result = self.engine.infer(str(upload_path))
         original = np.asarray(Image.open(upload_path).convert("RGB"), dtype=np.uint8)
         heat = _normalize_map(raw_result["anomaly_map"].astype(np.float32))
         overlay = self._build_overlay(original, heat)
-        boxes = self._extract_regions(heat, original.shape[:2])
-        matched_terms, unknown_flag, explanation = self._match_terms(defect_terms, heat, boxes, float(raw_result["score"]))
-
+        regions = self._extract_regions(heat, original.shape[:2])
+        matched_terms, unknown_flag, explanation = self._match_terms(defect_terms, heat, regions, float(raw_result["score"]))
         overlay_name = f"{inspection_id}-overlay.png"
-        overlay_path = self.output_dir / overlay_name
-        Image.fromarray(overlay).save(overlay_path)
-
+        Image.fromarray(overlay).save(self.output_dir / overlay_name)
         record = {
             "id": inspection_id,
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": _now(),
             "scene_name": scene_name or "默认产线",
             "image_name": image_file.filename or upload_path.name,
             "mode": "真实模型" if raw_result["mode"] == "real" else "演示模式",
@@ -198,39 +358,76 @@ class OpenVocabularyDefectSystem:
             "unknown_flag": unknown_flag,
         }
         self._append_history(record)
-
         return {
             "record": record,
             "original_image": f"/uploads/{upload_path.name}",
             "overlay_image": f"/generated/{overlay_name}",
-            "terms": defect_terms,
+            "regions": regions,
             "heat_peak": round(float(np.max(heat)), 3),
             "heat_mean": round(float(np.mean(heat)), 3),
-            "regions": boxes,
             "explanation": explanation,
-            "history": self.load_history(),
+        }
+
+    def dashboard_data(self) -> Dict[str, Any]:
+        history = self.load_history()
+        jobs = self.training.list_jobs()
+        vocab = self.vocab_store.list_terms()
+        abnormal = [item for item in history if item["decision"] != "状态正常"]
+        return {
             "runtime_mode": self.runtime_mode,
+            "history_count": len(history),
+            "abnormal_count": len(abnormal),
+            "vocab_count": len(vocab),
+            "job_count": len(jobs),
+            "recent_history": history[:5],
+            "recent_jobs": jobs[:5],
+        }
+
+    def training_defaults(self) -> Dict[str, str]:
+        return {
+            "job_name": "",
+            "profile": "gated_fusion",
+            "dataset": "mvtec",
+            "train_data_path": "./data/mvtec",
+            "save_path": "./checkpoint/noForzen/web_demo",
+            "epoch": "15",
+            "batch_size": "8",
+            "learning_rate": "0.001",
+            "image_size": "518",
+            "seed": "111",
+            "primary_mode": "train",
+            "mix_data_paths": "",
+            "mix_dataset_names": "",
+            "mix_modes": "",
+            "mix_ratio": "0.1",
         }
 
     def load_history(self) -> List[Dict[str, Any]]:
-        if not self.history_path.exists():
-            return []
-        return json.loads(self.history_path.read_text(encoding="utf-8"))
+        return _read_json(self.history_path, [])
+
+    def history_stats(self) -> Dict[str, int]:
+        history = self.load_history()
+        return {
+            "total": len(history),
+            "normal": len([item for item in history if item["decision"] == "状态正常"]),
+            "suspect": len([item for item in history if item["decision"] == "疑似异常"]),
+            "danger": len([item for item in history if item["decision"] == "高风险异常"]),
+        }
 
     def _append_history(self, record: Dict[str, Any]) -> None:
         history = self.load_history()
         history.insert(0, record)
-        self.history_path.write_text(json.dumps(history[:12], ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_json(self.history_path, history[:50])
 
-    def _build_overlay(self, image_bgr: np.ndarray, heat: np.ndarray) -> np.ndarray:
+    def _build_overlay(self, image_rgb: np.ndarray, heat: np.ndarray) -> np.ndarray:
         color = np.zeros((heat.shape[0], heat.shape[1], 3), dtype=np.float32)
         color[:, :, 0] = np.clip(1.6 * heat - 0.1, 0.0, 1.0)
         color[:, :, 1] = np.clip(1.3 - np.abs(heat - 0.45) * 3.0, 0.0, 1.0)
         color[:, :, 2] = np.clip(1.0 - 1.5 * heat, 0.0, 1.0)
-        blended = image_bgr.astype(np.float32) * 0.58 + color * 255.0 * 0.42
+        blended = image_rgb.astype(np.float32) * 0.58 + color * 255.0 * 0.42
         return np.uint8(np.clip(blended, 0, 255))
 
-    def _extract_regions(self, heat: np.ndarray, image_shape: tuple) -> List[Dict[str, Any]]:
+    def _extract_regions(self, heat: np.ndarray, image_shape: tuple[int, int]) -> List[Dict[str, Any]]:
         threshold = max(0.45, float(np.percentile(heat, 90)))
         binary = heat >= threshold
         visited = np.zeros_like(binary, dtype=bool)
@@ -240,18 +437,18 @@ class OpenVocabularyDefectSystem:
             for x in range(width):
                 if not binary[y, x] or visited[y, x]:
                     continue
-                queue = [(x, y)]
+                stack = [(x, y)]
                 visited[y, x] = True
                 xs = []
                 ys = []
-                while queue:
-                    cx, cy = queue.pop()
+                while stack:
+                    cx, cy = stack.pop()
                     xs.append(cx)
                     ys.append(cy)
                     for nx, ny in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)):
                         if 0 <= nx < width and 0 <= ny < height and binary[ny, nx] and not visited[ny, nx]:
                             visited[ny, nx] = True
-                            queue.append((nx, ny))
+                            stack.append((nx, ny))
                 x0, x1 = min(xs), max(xs)
                 y0, y1 = min(ys), max(ys)
                 w = x1 - x0 + 1
@@ -259,15 +456,7 @@ class OpenVocabularyDefectSystem:
                 area_ratio = float((w * h) / max(width * height, 1))
                 if area_ratio < 0.003:
                     continue
-                regions.append(
-                    {
-                        "x": int(x0),
-                        "y": int(y0),
-                        "w": int(w),
-                        "h": int(h),
-                        "area_ratio": round(area_ratio, 3),
-                    }
-                )
+                regions.append({"x": x0, "y": y0, "w": w, "h": h, "area_ratio": round(area_ratio, 3)})
         regions.sort(key=lambda item: item["area_ratio"], reverse=True)
         return regions[:3]
 
@@ -279,14 +468,12 @@ class OpenVocabularyDefectSystem:
         score: float,
     ) -> tuple[List[str], bool, str]:
         if not defect_terms:
-            defect_terms = ["划痕", "裂纹", "污渍", "孔洞"]
-
+            defect_terms = self.vocab_store.term_names()
         if score < 0.2:
             return [], False, "当前图像整体异常响应较低，系统判定为正常样本或低风险样本。"
-
         spread = float(np.mean(heat > 0.55))
-        elongated = any(max(region["w"], region["h"]) / max(min(region["w"], region["h"]), 1) > 3 for region in regions)
-        compact = any(0.005 < region["area_ratio"] < 0.03 for region in regions)
+        elongated = any(max(item["w"], item["h"]) / max(min(item["w"], item["h"]), 1) > 3 for item in regions)
+        compact = any(0.005 < item["area_ratio"] < 0.03 for item in regions)
         matched = []
         for term in defect_terms:
             lower = term.lower()
@@ -296,17 +483,16 @@ class OpenVocabularyDefectSystem:
                 matched.append(term)
             elif any(key in lower for key in ["hole", "孔", "缺口", "凹坑"]) and compact:
                 matched.append(term)
-
         unknown_flag = bool(np.max(heat) > 0.82 and not matched)
         if regions:
             explanation = f"系统在图像中定位到 {len(regions)} 个候选异常区域，热力峰值为 {float(np.max(heat)):.2f}。"
         else:
             explanation = "当前图像未形成稳定异常区域，整体响应较分散。"
         if unknown_flag:
-            explanation += " 现有词汇库未能准确覆盖该模式，建议作为未知缺陷加入复核队列。"
+            explanation += " 现有词汇库未能覆盖该模式，建议加入未知缺陷复核流程。"
         elif matched:
             explanation += f" 结合开放词汇库，当前更接近 {', '.join(matched)}。"
-        elif score >= 0.45:
+        elif score >= 0.45 and defect_terms:
             matched = defect_terms[:1]
-            explanation += f" 当前存在异常响应，但尚缺少更精确的语义区分，暂以 {matched[0]} 进入复核流程。"
+            explanation += f" 当前存在异常响应，但语义尚不稳定，暂以 {matched[0]} 进入人工复核。"
         return matched, unknown_flag, explanation

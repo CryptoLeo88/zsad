@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}检测历史{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">History</p>
+    <h2>检测历史</h2>
+    <p>查看历史检测结果，用于质量追溯、应用演示和后续系统评估。</p>
+  </div>
+</section>
+<section class="card-grid stats-grid">
+  <article class="card stat-card"><span>总任务数</span><strong>{{ stats.total }}</strong></article>
+  <article class="card stat-card"><span>正常样本</span><strong>{{ stats.normal }}</strong></article>
+  <article class="card stat-card"><span>疑似异常</span><strong>{{ stats.suspect }}</strong></article>
+  <article class="card stat-card"><span>高风险异常</span><strong>{{ stats.danger }}</strong></article>
+</section>
+<section class="card">
+  <div class="card-head"><h3>历史记录列表</h3></div>
+  <table>
+    <thead><tr><th>时间</th><th>产线</th><th>图像</th><th>模式</th><th>评分</th><th>结论</th><th>词汇命中</th></tr></thead>
+    <tbody>
+      {% for item in items %}
+      <tr><td>{{ item.created_at }}</td><td>{{ item.scene_name }}</td><td>{{ item.image_name }}</td><td>{{ item.mode }}</td><td>{{ item.score }}</td><td>{{ item.decision }}</td><td>{{ item.matched_terms|join("、") if item.matched_terms else "未命中" }}</td></tr>
+      {% else %}
+      <tr><td colspan="7">暂无检测记录。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

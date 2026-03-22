@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}训练详情{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Training Detail</p>
+    <h2>{{ job.name }}</h2>
+    <p>查看训练任务状态、命令参数和最新日志输出。</p>
+  </div>
+</section>
+<section class="split-grid">
+  <article class="card">
+    <div class="card-head"><h3>任务信息</h3></div>
+    <div class="kv-list">
+      <div><span>任务编号</span><strong>{{ job.id }}</strong></div>
+      <div><span>训练方案</span><strong>{{ job.profile_label }}</strong></div>
+      <div><span>状态</span><strong class="status {{ job.status }}">{{ job.status }}</strong></div>
+      <div><span>创建时间</span><strong>{{ job.created_at }}</strong></div>
+      <div><span>开始时间</span><strong>{{ job.started_at or '-' }}</strong></div>
+      <div><span>结束时间</span><strong>{{ job.finished_at or '-' }}</strong></div>
+      <div><span>数据路径</span><strong>{{ job.train_data_path }}</strong></div>
+      <div><span>输出路径</span><strong>{{ job.save_path }}</strong></div>
+      <div><span>状态说明</span><strong>{{ job.message }}</strong></div>
+    </div>
+  </article>
+  <article class="card">
+    <div class="card-head"><h3>训练命令</h3></div>
+    <pre class="log-box">{{ " ".join(job.command) }}</pre>
+    <div class="card-head compact"><h3>最近任务</h3></div>
+    <table>
+      <thead><tr><th>任务</th><th>状态</th></tr></thead>
+      <tbody>
+        {% for item in jobs %}
+        <tr><td><a href="{{ url_for('training_detail', job_id=item.id) }}">{{ item.name }}</a></td><td><span class="status {{ item.status }}">{{ item.status }}</span></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+<section class="card">
+  <div class="card-head"><h3>日志输出</h3></div>
+  <pre class="log-box tall">{{ log_text or "日志尚未生成。若任务刚启动，请刷新页面稍后查看。" }}</pre>
+</section>
+{% endblock %}

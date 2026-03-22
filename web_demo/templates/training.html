@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}训练中心{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Training</p>
+    <h2>训练中心</h2>
+    <p>从页面直接发起训练。系统将后台执行训练脚本，并在任务详情页展示状态和日志。</p>
+  </div>
+</section>
+<section class="split-grid training-layout">
+  <article class="card">
+    <div class="card-head"><h3>创建训练任务</h3></div>
+    <form method="post" class="stack-form">
+      <label><span>任务名称</span><input type="text" name="job_name" value="{{ form_data.job_name }}" placeholder="例如：mvtec-gated-fusion" /></label>
+      <label><span>训练方案</span><select name="profile">{% for profile in profiles %}<option value="{{ profile.id }}" {% if profile.id == form_data.profile %}selected{% endif %}>{{ profile.label }}</option>{% endfor %}</select></label>
+      <label><span>数据集名称</span><input type="text" name="dataset" value="{{ form_data.dataset }}" /></label>
+      <label><span>训练数据路径</span><input type="text" name="train_data_path" value="{{ form_data.train_data_path }}" /></label>
+      <label><span>权重输出路径</span><input type="text" name="save_path" value="{{ form_data.save_path }}" /></label>
+      <div class="inline-grid">
+        <label><span>Epoch</span><input type="text" name="epoch" value="{{ form_data.epoch }}" /></label>
+        <label><span>Batch Size</span><input type="text" name="batch_size" value="{{ form_data.batch_size }}" /></label>
+      </div>
+      <div class="inline-grid">
+        <label><span>Learning Rate</span><input type="text" name="learning_rate" value="{{ form_data.learning_rate }}" /></label>
+        <label><span>Image Size</span><input type="text" name="image_size" value="{{ form_data.image_size }}" /></label>
+      </div>
+      <label><span>随机种子</span><input type="text" name="seed" value="{{ form_data.seed }}" /></label>
+      <div class="subsection">
+        <h4>混合训练附加参数</h4>
+        <label><span>主数据模式</span><input type="text" name="primary_mode" value="{{ form_data.primary_mode }}" /></label>
+        <label><span>混合数据路径</span><textarea name="mix_data_paths" rows="2">{{ form_data.mix_data_paths }}</textarea></label>
+        <label><span>混合数据集名称</span><textarea name="mix_dataset_names" rows="2">{{ form_data.mix_dataset_names }}</textarea></label>
+        <label><span>混合数据模式</span><textarea name="mix_modes" rows="2">{{ form_data.mix_modes }}</textarea></label>
+        <label><span>混合采样比例</span><input type="text" name="mix_ratio" value="{{ form_data.mix_ratio }}" /></label>
+      </div>
+      <button type="submit">启动训练</button>
+    </form>
+  </article>
+  <article class="card">
+    <div class="card-head"><h3>最近任务</h3></div>
+    <table>
+      <thead><tr><th>任务</th><th>方案</th><th>状态</th><th>详情</th></tr></thead>
+      <tbody>
+        {% for item in jobs %}
+        <tr><td>{{ item.name }}</td><td>{{ item.profile_label }}</td><td><span class="status {{ item.status }}">{{ item.status }}</span></td><td><a href="{{ url_for('training_detail', job_id=item.id) }}">查看</a></td></tr>
+        {% else %}
+        <tr><td colspan="4">暂无训练任务。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+{% endblock %}

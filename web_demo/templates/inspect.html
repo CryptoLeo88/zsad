@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}检测中心{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Inspection</p>
+    <h2>检测中心</h2>
+    <p>上传工件图像并输入开放词汇，系统将输出异常热力图、缺陷结论和候选异常区域。</p>
+  </div>
+</section>
+<section class="split-grid">
+  <article class="card">
+    <div class="card-head"><h3>新建检测任务</h3></div>
+    <form method="post" enctype="multipart/form-data" class="stack-form">
+      <label><span>产线/工位名称</span><input type="text" name="scene_name" value="{{ form_data.scene_name }}" /></label>
+      <label><span>开放词汇缺陷库</span><textarea name="defect_terms" rows="5">{{ form_data.defect_terms }}</textarea></label>
+      <label><span>待检测图像</span><input type="file" name="image" accept="image/*" /></label>
+      <button type="submit">开始检测</button>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    </form>
+  </article>
+  <article class="card">
+    <div class="card-head"><h3>能力说明</h3></div>
+    <ul class="feature-list">
+      <li>支持开放词汇输入，便于不同工艺和不同产品切换。</li>
+      <li>支持异常热力图显示，辅助人工快速定位问题区域。</li>
+      <li>支持未知缺陷提示，减少词汇库覆盖不足带来的漏报。</li>
+      <li>支持候选区域输出，便于后续系统联动和论文展示。</li>
+    </ul>
+  </article>
+</section>
+{% if result %}
+<section class="card">
+  <div class="card-head"><h3>检测结果</h3><p>{{ result.record.created_at }} · {{ result.record.scene_name }}</p></div>
+  <section class="card-grid stats-grid">
+    <article class="card stat-card"><span>综合评分</span><strong>{{ "%.1f"|format(result.record.score * 100) }}</strong></article>
+    <article class="card stat-card"><span>检测结论</span><strong>{{ result.record.decision }}</strong></article>
+    <article class="card stat-card"><span>词汇命中</span><strong>{{ result.record.matched_terms|join("、") if result.record.matched_terms else "未命中" }}</strong></article>
+    <article class="card stat-card"><span>未知缺陷</span><strong>{{ "是" if result.record.unknown_flag else "否" }}</strong></article>
+  </section>
+  <div class="image-grid">
+    <figure><img src="{{ result.original_image }}" alt="原始图像" /><figcaption>原始图像</figcaption></figure>
+    <figure><img src="{{ result.overlay_image }}" alt="异常热力图" /><figcaption>异常热力图</figcaption></figure>
+  </div>
+  <div class="note-box">
+    <p>{{ result.explanation }}</p>
+    <p>热力峰值：{{ result.heat_peak }}，平均响应：{{ result.heat_mean }}，运行方式：{{ result.record.mode }}。</p>
+  </div>
+  <table>
+    <thead><tr><th>序号</th><th>左上角坐标</th><th>宽高</th><th>面积占比</th></tr></thead>
+    <tbody>
+      {% for region in result.regions %}
+      <tr><td>{{ loop.index }}</td><td>({{ region.x }}, {{ region.y }})</td><td>{{ region.w }} × {{ region.h }}</td><td>{{ region.area_ratio }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">未检测到稳定异常区域。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
