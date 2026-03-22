@@ -43,7 +43,7 @@ def train(args):
         "learnabel_text_embedding_length": args.t_n_ctx
     }
 
-    model, _ = AnomalyCLIP_lib.load("ViT-L/14@336px", device=device, design_details=anomalyclip_parameters)
+    model, _ = AnomalyCLIP_lib.load(args.backbone, device=device, design_details=anomalyclip_parameters)
     model.eval()
 
     hsf = HybridSemanticFusion(20)
@@ -229,6 +229,7 @@ if __name__ == "__main__":
     parser.add_argument("--gate_hidden_dim", type=int, default=0, help="hidden dim of adaptive gate, 0 means embed dim")
     parser.add_argument("--gate_dropout", type=float, default=0.1, help="dropout in adaptive gate")
     parser.add_argument("--gate_regularization_weight", type=float, default=0.01, help="regularization weight for gate stability")
+    parser.add_argument("--backbone", type=str, default="ViT-L/14@336px", help="vision backbone")
     args = parser.parse_args()
     setup_seed(args.seed)
     train(args)

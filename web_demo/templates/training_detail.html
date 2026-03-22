@@ -14,6 +14,7 @@
     <div class="kv-list">
       <div><span>任务编号</span><strong>{{ job.id }}</strong></div>
       <div><span>训练方案</span><strong>{{ job.profile_label }}</strong></div>
+      <div><span>主干网络</span><strong>{{ job.backbone }}</strong></div>
       <div><span>状态</span><strong class="status {{ job.status }}">{{ job.status }}</strong></div>
       <div><span>创建时间</span><strong>{{ job.created_at }}</strong></div>
       <div><span>开始时间</span><strong>{{ job.started_at or '-' }}</strong></div>

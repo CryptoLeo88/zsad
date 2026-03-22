@@ -48,7 +48,7 @@ def train(args):
     }
 
     # 加载 AnomalyCLIP 模型
-    model, _ = AnomalyCLIP_lib.load("ViT-L/14@336px", device=device, design_details=AnomalyCLIP_parameters)
+    model, _ = AnomalyCLIP_lib.load(args.backbone, device=device, design_details=AnomalyCLIP_parameters)
     model.eval()  # 设置模型为评估模式
 
 
@@ -188,6 +188,7 @@ if __name__ == '__main__':
     parser.add_argument("--print_freq", type=int, default=1, help="print frequency")
     parser.add_argument("--save_freq", type=int, default=1, help="save frequency")
     parser.add_argument("--seed", type=int, default=111, help="random seed")
+    parser.add_argument("--backbone", type=str, default="ViT-L/14@336px", help="vision backbone")
     args = parser.parse_args()
     setup_seed(args.seed)
     train(args)

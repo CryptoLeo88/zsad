@@ -35,17 +35,40 @@ def inspect():
     form_data = {
         "scene_name": "冲压件产线-A",
         "defect_terms": "，".join(system.vocab_store.term_names()),
+        "selected_model_path": "",
+        "selected_model_option": "",
+        "selected_framework": "开放词汇通用检测框架",
+        "selected_backbone": "ViT-L/14@336px",
     }
     if request.method == "POST":
         image = request.files.get("image")
         form_data["scene_name"] = request.form.get("scene_name", form_data["scene_name"])
         form_data["defect_terms"] = request.form.get("defect_terms", form_data["defect_terms"])
+        form_data["selected_model_option"] = request.form.get("selected_model_option", "")
+        manual_model_path = request.form.get("selected_model_path", "")
+        form_data["selected_model_path"] = manual_model_path or form_data["selected_model_option"]
+        form_data["selected_framework"] = request.form.get("selected_framework", form_data["selected_framework"])
+        form_data["selected_backbone"] = request.form.get("selected_backbone", form_data["selected_backbone"])
         if not image or not image.filename:
             error = "请先上传待检测图像。"
         else:
             terms = [item.strip() for item in form_data["defect_terms"].replace("，", ",").split(",") if item.strip()]
-            result = system.analyze(image, terms, form_data["scene_name"])
-    return render_template("inspect.html", active_page="inspect", result=result, error=error, form_data=form_data)
+            result = system.analyze(
+                image,
+                terms,
+                form_data["scene_name"],
+                form_data["selected_model_path"],
+                form_data["selected_framework"],
+                form_data["selected_backbone"],
+            )
+    return render_template(
+        "inspect.html",
+        active_page="inspect",
+        result=result,
+        error=error,
+        form_data=form_data,
+        available_models=system.available_models(),
+    )
 
 
 @app.route("/training", methods=["GET", "POST"])
@@ -53,6 +76,9 @@ def training():
     defaults = system.training_defaults()
     if request.method == "POST":
         form_data = {key: request.form.get(key, value) for key, value in defaults.items()}
+        dataset_file = request.files.get("dataset_archive")
+        if dataset_file and dataset_file.filename:
+            form_data["train_data_path"] = system.save_uploaded_dataset(dataset_file, form_data["job_name"] or "dataset")
         job_id = system.training.start_job(form_data)
         return redirect(url_for("training_detail", job_id=job_id))
     return render_template(

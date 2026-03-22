@@ -5,18 +5,20 @@
   <div>
     <p class="eyebrow">Training</p>
     <h2>训练中心</h2>
-    <p>从页面直接发起训练。系统将后台执行训练脚本，并在任务详情页展示状态和日志。</p>
+    <p>上传实际工业缺陷数据集，选择论文中的检测框架和主干网络后发起训练。</p>
   </div>
 </section>
 <section class="split-grid training-layout">
   <article class="card">
     <div class="card-head"><h3>创建训练任务</h3></div>
-    <form method="post" class="stack-form">
+    <form method="post" enctype="multipart/form-data" class="stack-form">
       <label><span>任务名称</span><input type="text" name="job_name" value="{{ form_data.job_name }}" placeholder="例如：mvtec-gated-fusion" /></label>
       <label><span>训练方案</span><select name="profile">{% for profile in profiles %}<option value="{{ profile.id }}" {% if profile.id == form_data.profile %}selected{% endif %}>{{ profile.label }}</option>{% endfor %}</select></label>
-      <label><span>数据集名称</span><input type="text" name="dataset" value="{{ form_data.dataset }}" /></label>
-      <label><span>训练数据路径</span><input type="text" name="train_data_path" value="{{ form_data.train_data_path }}" /></label>
+      <label><span>数据集名称</span><input type="text" name="dataset" value="{{ form_data.dataset }}" placeholder="例如：casting_defect_dataset" /></label>
+      <label><span>工业缺陷数据集压缩包</span><input type="file" name="dataset_archive" accept=".zip,.tar,.gz,.bz2,.xz" /></label>
+      <label><span>训练数据路径</span><input type="text" name="train_data_path" value="{{ form_data.train_data_path }}" placeholder="若不上传压缩包，可直接填写本地数据集路径" /></label>
       <label><span>权重输出路径</span><input type="text" name="save_path" value="{{ form_data.save_path }}" /></label>
+      <label><span>主干网络</span><select name="backbone"><option value="ViT-L/14@336px" {% if form_data.backbone == 'ViT-L/14@336px' %}selected{% endif %}>ViT-L/14@336px</option><option value="ViT-B/16" {% if form_data.backbone == 'ViT-B/16' %}selected{% endif %}>ViT-B/16</option></select></label>
       <div class="inline-grid">
         <label><span>Epoch</span><input type="text" name="epoch" value="{{ form_data.epoch }}" /></label>
         <label><span>Batch Size</span><input type="text" name="batch_size" value="{{ form_data.batch_size }}" /></label>
@@ -26,14 +28,6 @@
         <label><span>Image Size</span><input type="text" name="image_size" value="{{ form_data.image_size }}" /></label>
       </div>
       <label><span>随机种子</span><input type="text" name="seed" value="{{ form_data.seed }}" /></label>
-      <div class="subsection">
-        <h4>混合训练附加参数</h4>
-        <label><span>主数据模式</span><input type="text" name="primary_mode" value="{{ form_data.primary_mode }}" /></label>
-        <label><span>混合数据路径</span><textarea name="mix_data_paths" rows="2">{{ form_data.mix_data_paths }}</textarea></label>
-        <label><span>混合数据集名称</span><textarea name="mix_dataset_names" rows="2">{{ form_data.mix_dataset_names }}</textarea></label>
-        <label><span>混合数据模式</span><textarea name="mix_modes" rows="2">{{ form_data.mix_modes }}</textarea></label>
-        <label><span>混合采样比例</span><input type="text" name="mix_ratio" value="{{ form_data.mix_ratio }}" /></label>
-      </div>
       <button type="submit">启动训练</button>
     </form>
   </article>

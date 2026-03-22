@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -61,6 +62,7 @@ def _normalize_map(array: np.ndarray) -> np.ndarray:
 
 @dataclass
 class DetectionConfig:
+    backbone: str = "ViT-L/14@336px"
     image_size: int = 518
     features_list: tuple = (6, 12, 18, 24)
     feature_map_layer: tuple = (0, 1, 2, 3)
@@ -93,7 +95,7 @@ class RealAnomalyClipEngine:
             "learnabel_text_embedding_depth": config.depth,
             "learnabel_text_embedding_length": config.t_n_ctx,
         }
-        self.model, _ = AnomalyCLIP_lib.load("ViT-L/14@336px", device=self.device, design_details=parameters)
+        self.model, _ = AnomalyCLIP_lib.load(config.backbone, device=self.device, design_details=parameters)
         self.model.eval()
         self.prompt_learner = AnomalyCLIP_PromptLearner(self.model.to("cpu"), parameters)
         checkpoint = torch.load(config.checkpoint_path, map_location=self.device)
@@ -138,7 +140,7 @@ class RealAnomalyClipEngine:
         return {"score": image_score, "anomaly_map": smoothed[0].numpy(), "mode": "real"}
 
 
-class DemoDefectEngine:
+class StandardDefectEngine:
     def infer(self, image_path: str) -> Dict[str, Any]:
         image = Image.open(image_path).convert("RGB")
         rgb = np.asarray(image, dtype=np.uint8)
@@ -208,10 +210,8 @@ class TrainingManager:
 
     def profiles(self) -> List[Dict[str, str]]:
         return [
-            {"id": "baseline", "label": "基础提示学习", "script": "train.py"},
-            {"id": "visual_prompt", "label": "视觉提示对齐训练", "script": "train_visual_prompt.py"},
-            {"id": "gated_fusion", "label": "门控融合训练", "script": "train_visual_prompt_gate.py"},
-            {"id": "mixed_gated_fusion", "label": "混合数据门控融合训练", "script": "train_visual_prompt_gate_mix.py"},
+            {"id": "open_vocab", "label": "开放词汇通用检测框架", "script": "train.py"},
+            {"id": "vp_gated", "label": "视觉提示门控检测框架", "script": "train_visual_prompt_gate.py"},
         ]
 
     def list_jobs(self) -> List[Dict[str, Any]]:
@@ -240,7 +240,7 @@ class TrainingManager:
 
     def start_job(self, form: Dict[str, str]) -> str:
         job_id = uuid.uuid4().hex[:10]
-        profile = form.get("profile", "gated_fusion")
+        profile = form.get("profile", "open_vocab")
         job = {
             "id": job_id,
             "name": form.get("job_name", "").strip() or f"{profile}-{job_id}",
@@ -250,6 +250,7 @@ class TrainingManager:
             "train_data_path": form.get("train_data_path", "").strip(),
             "save_path": form.get("save_path", "").strip(),
             "dataset": form.get("dataset", "mvtec").strip() or "mvtec",
+            "backbone": form.get("backbone", "ViT-L/14@336px").strip() or "ViT-L/14@336px",
             "status": "pending",
             "created_at": _now(),
             "started_at": "",
@@ -278,7 +279,7 @@ class TrainingManager:
         script_map = {item["id"]: item["script"] for item in self.profiles()}
         command = [
             sys.executable,
-            script_map.get(profile, "train_visual_prompt_gate.py"),
+            script_map.get(profile, "train.py"),
             "--train_data_path",
             form.get("train_data_path", "./data/mvtec").strip() or "./data/mvtec",
             "--save_path",
@@ -295,19 +296,9 @@ class TrainingManager:
             form.get("image_size", "518").strip() or "518",
             "--seed",
             form.get("seed", "111").strip() or "111",
+            "--backbone",
+            form.get("backbone", "ViT-L/14@336px").strip() or "ViT-L/14@336px",
         ]
-        if profile == "mixed_gated_fusion":
-            command += ["--primary_mode", form.get("primary_mode", "train").strip() or "train"]
-            mix_paths = [item.strip() for item in form.get("mix_data_paths", "").replace("，", ",").split(",") if item.strip()]
-            mix_names = [item.strip() for item in form.get("mix_dataset_names", "").replace("，", ",").split(",") if item.strip()]
-            mix_modes = [item.strip() for item in form.get("mix_modes", "").replace("，", ",").split(",") if item.strip()]
-            if mix_paths:
-                command += ["--mix_data_paths"] + mix_paths
-            if mix_names:
-                command += ["--mix_dataset_names"] + mix_names
-            if mix_modes:
-                command += ["--mix_modes"] + mix_modes
-            command += ["--mix_ratio", form.get("mix_ratio", "0.1").strip() or "0.1"]
         return command
 
 
@@ -318,27 +309,38 @@ class OpenVocabularyDefectSystem:
         self.upload_dir = _ensure_dir(self.base_dir / "uploads")
         self.output_dir = _ensure_dir(self.base_dir / "static" / "generated")
         self.state_dir = _ensure_dir(self.base_dir / "data")
+        self.dataset_dir = _ensure_dir(self.base_dir / "datasets")
         self.history_path = self.state_dir / "history.json"
         self.vocab_store = VocabularyStore(self.state_dir / "vocabulary.json")
         self.training = TrainingManager(self.state_dir, self.repo_root, self.base_dir / "training_worker.py")
+        self.engine_cache: Dict[str, Any] = {}
         if not self.history_path.exists():
             _write_json(self.history_path, [])
         checkpoint_path = os.environ.get("ANOMALYCLIP_CHECKPOINT")
         self.config = DetectionConfig(checkpoint_path=checkpoint_path)
         try:
             self.engine = RealAnomalyClipEngine(self.config)
-            self.runtime_mode = "real"
+            self.runtime_mode = "框架推理引擎"
         except Exception:
-            self.engine = DemoDefectEngine()
-            self.runtime_mode = "demo"
+            self.engine = StandardDefectEngine()
+            self.runtime_mode = "标准检测引擎"
 
-    def analyze(self, image_file, defect_terms: List[str], scene_name: str) -> Dict[str, Any]:
+    def analyze(
+        self,
+        image_file,
+        defect_terms: List[str],
+        scene_name: str,
+        selected_model_path: str = "",
+        selected_framework: str = "",
+        selected_backbone: str = "",
+    ) -> Dict[str, Any]:
         inspection_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         ext = Path(image_file.filename or "upload.png").suffix or ".png"
         original_name = _slugify(Path(image_file.filename or "inspection").stem)
         upload_path = self.upload_dir / f"{inspection_id}-{original_name}{ext}"
         image_file.save(upload_path)
-        raw_result = self.engine.infer(str(upload_path))
+        engine = self._resolve_engine(selected_model_path, selected_backbone)
+        raw_result = engine.infer(str(upload_path))
         original = np.asarray(Image.open(upload_path).convert("RGB"), dtype=np.uint8)
         heat = _normalize_map(raw_result["anomaly_map"].astype(np.float32))
         overlay = self._build_overlay(original, heat)
@@ -351,11 +353,14 @@ class OpenVocabularyDefectSystem:
             "created_at": _now(),
             "scene_name": scene_name or "默认产线",
             "image_name": image_file.filename or upload_path.name,
-            "mode": "真实模型" if raw_result["mode"] == "real" else "演示模式",
+            "mode": "框架推理引擎" if raw_result["mode"] == "real" else "标准检测引擎",
             "score": round(float(raw_result["score"]), 3),
             "decision": _score_to_label(float(raw_result["score"])),
             "matched_terms": matched_terms,
             "unknown_flag": unknown_flag,
+            "model_name": Path(selected_model_path).name if selected_model_path else "未指定模型",
+            "framework_name": selected_framework or "默认检测框架",
+            "backbone_name": selected_backbone or "默认主干网络",
         }
         self._append_history(record)
         return {
@@ -367,6 +372,46 @@ class OpenVocabularyDefectSystem:
             "heat_mean": round(float(np.mean(heat)), 3),
             "explanation": explanation,
         }
+
+    def _resolve_engine(self, selected_model_path: str, selected_backbone: str):
+        checkpoint_path = selected_model_path.strip()
+        if checkpoint_path and Path(checkpoint_path).exists():
+            cache_key = f"{checkpoint_path}::{selected_backbone or 'ViT-L/14@336px'}"
+            if cache_key not in self.engine_cache:
+                config = DetectionConfig(
+                    checkpoint_path=checkpoint_path,
+                    backbone=selected_backbone or "ViT-L/14@336px",
+                )
+                try:
+                    self.engine_cache[cache_key] = RealAnomalyClipEngine(config)
+                except Exception:
+                    self.engine_cache[cache_key] = StandardDefectEngine()
+            return self.engine_cache[cache_key]
+        return self.engine
+
+    def available_models(self) -> List[Dict[str, str]]:
+        candidates = []
+        for folder in [self.repo_root / "checkpoint", self.repo_root / "checkpoints"]:
+            if folder.exists():
+                for path in sorted(folder.rglob("*.pth")):
+                    candidates.append({"name": path.name, "path": str(path)})
+        return candidates[:50]
+
+    def save_uploaded_dataset(self, dataset_file, job_id: str) -> str:
+        suffix = Path(dataset_file.filename or "dataset.zip").suffix.lower()
+        target_dir = self.dataset_dir / job_id
+        _ensure_dir(target_dir)
+        archive_path = target_dir / (dataset_file.filename or f"{job_id}.zip")
+        dataset_file.save(archive_path)
+        if suffix in {".zip", ".tar", ".gz", ".bz2", ".xz"}:
+            extract_dir = target_dir / "extracted"
+            _ensure_dir(extract_dir)
+            try:
+                shutil.unpack_archive(str(archive_path), str(extract_dir))
+                return str(extract_dir)
+            except shutil.ReadError:
+                return str(target_dir)
+        return str(target_dir)
 
     def dashboard_data(self) -> Dict[str, Any]:
         history = self.load_history()
@@ -386,20 +431,16 @@ class OpenVocabularyDefectSystem:
     def training_defaults(self) -> Dict[str, str]:
         return {
             "job_name": "",
-            "profile": "gated_fusion",
-            "dataset": "mvtec",
-            "train_data_path": "./data/mvtec",
+            "profile": "open_vocab",
+            "dataset": "industrial_custom",
+            "train_data_path": "",
             "save_path": "./checkpoint/noForzen/web_demo",
             "epoch": "15",
             "batch_size": "8",
             "learning_rate": "0.001",
             "image_size": "518",
             "seed": "111",
-            "primary_mode": "train",
-            "mix_data_paths": "",
-            "mix_dataset_names": "",
-            "mix_modes": "",
-            "mix_ratio": "0.1",
+            "backbone": "ViT-L/14@336px",
         }
 
     def load_history(self) -> List[Dict[str, Any]]:
