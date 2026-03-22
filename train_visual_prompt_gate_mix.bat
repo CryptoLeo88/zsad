@@ -1,0 +1,20 @@
+python train_visual_prompt_gate_mix.py ^
+  --dataset mvtec ^
+  --train_data_path .\data\MVTec ^
+  --primary_mode train ^
+  --mix_data_paths .\data\visa .\data\MPDD .\data\BTAD .\data\SDD .\data\DAGM .\data\DTD-Synthetic ^
+  --mix_dataset_names visa mpdd btad SDD DAGM DTD ^
+  --mix_modes test test test test test test ^
+  --mix_ratio 0.1 ^
+  --save_path .\checkpoint\noForzen\hsf_visual_prompt_gate_mix ^
+  --features_list 6 12 18 24 ^
+  --image_size 518 ^
+  --batch_size 8 ^
+  --print_freq 1 ^
+  --epoch 15 ^
+  --save_freq 1 ^
+  --depth 9 ^
+  --n_ctx 12 ^
+  --t_n_ctx 4 ^
+  --visual_prompt_loss_weight 0.1 ^
+  --gate_regularization_weight 0.01
