@@ -42,6 +42,7 @@ class Dataset(data.Dataset):
         self.root = root
         self.transform = transform
         self.target_transform = target_transform
+        self.mode = mode
         self.data_all = []
         meta_info = json.load(open(f'{self.root}/meta.json', 'r'))
         name = self.root.split('/')[-1]
@@ -75,17 +76,18 @@ class Dataset(data.Dataset):
         img_mask = self.target_transform(   
             img_mask) if self.target_transform is not None and img_mask is not None else img_mask
         img_mask = [] if img_mask is None else img_mask
-        if self.dataset_name == 'mvtec':
+        if self.dataset_name == 'mvtec' and self.mode == 'train':
             prefix_name, _ = os.path.splitext(img_path)
-            llm_embedding = torch.load(os.path.join(self.root, prefix_name + '.pt'))
-            llm_embedding = llm_embedding.unsqueeze(0)  # Add a batch dimension
-            llm_embedding = torch.nn.functional.interpolate(llm_embedding, size=(77, 768), mode='bilinear',
-                                                            align_corners=False)
+            pt_path = os.path.join(self.root, prefix_name + '.pt')
+            if os.path.exists(pt_path):
+                llm_embedding = torch.load(pt_path)
+                llm_embedding = llm_embedding.unsqueeze(0)  # Add a batch dimension
+                llm_embedding = torch.nn.functional.interpolate(llm_embedding, size=(77, 768), mode='bilinear',
+                                                                align_corners=False)
 
-            return {'img': img, 'img_mask': img_mask, 'cls_name': cls_name, 'anomaly': anomaly,
-                    'img_path': os.path.join(self.root, img_path), "cls_id": self.class_name_map_class_id[cls_name], "llm_embedding": llm_embedding}
+                return {'img': img, 'img_mask': img_mask, 'cls_name': cls_name, 'anomaly': anomaly,
+                        'img_path': os.path.join(self.root, img_path), "cls_id": self.class_name_map_class_id[cls_name], "llm_embedding": llm_embedding}
         return {'img': img, 'img_mask': img_mask, 'cls_name': cls_name, 'anomaly': anomaly,
                 'img_path': os.path.join(self.root, img_path), "cls_id": self.class_name_map_class_id[cls_name]}
-
 
 
