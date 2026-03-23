@@ -66,7 +66,12 @@ class Dataset(data.Dataset):
             self.data_all.extend(meta_info[cls_name])
         self.length = len(self.data_all)
         self.dataset_name = dataset_name
-        self.obj_list, self.class_name_map_class_id = generate_class_info(dataset_name)
+        try:
+            self.obj_list, self.class_name_map_class_id = generate_class_info(dataset_name)
+        except ValueError:
+            # For custom industrial datasets, derive category ids directly from meta.json.
+            self.obj_list = self.cls_names
+            self.class_name_map_class_id = {name: idx for idx, name in enumerate(self.obj_list)}
     def __len__(self):
         return self.length
 
