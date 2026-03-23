@@ -343,6 +343,7 @@ class OpenVocabularyDefectSystem:
         raw_result = engine.infer(str(upload_path))
         original = np.asarray(Image.open(upload_path).convert("RGB"), dtype=np.uint8)
         heat = _normalize_map(raw_result["anomaly_map"].astype(np.float32))
+        heat = self._resize_heatmap(heat, original.shape[:2])
         overlay = self._build_overlay(original, heat)
         regions = self._extract_regions(heat, original.shape[:2])
         matched_terms, unknown_flag, explanation = self._match_terms(defect_terms, heat, regions, float(raw_result["score"]))
@@ -467,6 +468,14 @@ class OpenVocabularyDefectSystem:
         color[:, :, 2] = np.clip(1.0 - 1.5 * heat, 0.0, 1.0)
         blended = image_rgb.astype(np.float32) * 0.58 + color * 255.0 * 0.42
         return np.uint8(np.clip(blended, 0, 255))
+
+    def _resize_heatmap(self, heat: np.ndarray, image_shape: Tuple[int, int]) -> np.ndarray:
+        target_height, target_width = image_shape
+        if heat.shape[0] == target_height and heat.shape[1] == target_width:
+            return heat
+        heat_image = Image.fromarray(np.uint8(np.clip(heat * 255, 0, 255)))
+        resized = heat_image.resize((target_width, target_height), Image.BILINEAR)
+        return np.asarray(resized, dtype=np.float32) / 255.0
 
     def _extract_regions(self, heat: np.ndarray, image_shape: Tuple[int, int]) -> List[Dict[str, Any]]:
         threshold = max(0.45, float(np.percentile(heat, 90)))
