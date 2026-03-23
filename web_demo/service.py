@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 
 def _ensure_dir(path: Path) -> Path:
@@ -348,7 +348,13 @@ class OpenVocabularyDefectSystem:
         regions = self._extract_regions(heat, original.shape[:2])
         matched_terms, unknown_flag, explanation = self._match_terms(defect_terms, heat, regions, float(raw_result["score"]))
         overlay_name = f"{inspection_id}-overlay.png"
+        boxed_original_name = f"{inspection_id}-boxed-original.png"
+        boxed_overlay_name = f"{inspection_id}-boxed-overlay.png"
+        boxed_original = self._draw_regions(original, regions, "异常区域")
+        boxed_overlay = self._draw_regions(overlay, regions, "异常区域")
         Image.fromarray(overlay).save(self.output_dir / overlay_name)
+        Image.fromarray(boxed_original).save(self.output_dir / boxed_original_name)
+        Image.fromarray(boxed_overlay).save(self.output_dir / boxed_overlay_name)
         record = {
             "id": inspection_id,
             "created_at": _now(),
@@ -368,6 +374,8 @@ class OpenVocabularyDefectSystem:
             "record": record,
             "original_image": f"/uploads/{upload_path.name}",
             "overlay_image": f"/generated/{overlay_name}",
+            "boxed_original_image": f"/generated/{boxed_original_name}",
+            "boxed_overlay_image": f"/generated/{boxed_overlay_name}",
             "regions": regions,
             "heat_peak": round(float(np.max(heat)), 3),
             "heat_mean": round(float(np.mean(heat)), 3),
@@ -468,6 +476,21 @@ class OpenVocabularyDefectSystem:
         color[:, :, 2] = np.clip(1.0 - 1.5 * heat, 0.0, 1.0)
         blended = image_rgb.astype(np.float32) * 0.58 + color * 255.0 * 0.42
         return np.uint8(np.clip(blended, 0, 255))
+
+    def _draw_regions(self, image_rgb: np.ndarray, regions: List[Dict[str, Any]], label: str) -> np.ndarray:
+        canvas = Image.fromarray(image_rgb.copy())
+        draw = ImageDraw.Draw(canvas)
+        for idx, region in enumerate(regions, 1):
+            x0 = int(region["x"])
+            y0 = int(region["y"])
+            x1 = int(region["x"] + region["w"])
+            y1 = int(region["y"] + region["h"])
+            draw.rectangle([x0, y0, x1, y1], outline=(214, 48, 49), width=4)
+            text = f"{label}{idx}"
+            text_box = [x0, max(0, y0 - 26), x0 + 96, max(24, y0)]
+            draw.rectangle(text_box, fill=(214, 48, 49))
+            draw.text((x0 + 8, max(2, y0 - 23)), text, fill=(255, 255, 255))
+        return np.asarray(canvas, dtype=np.uint8)
 
     def _resize_heatmap(self, heat: np.ndarray, image_shape: Tuple[int, int]) -> np.ndarray:
         target_height, target_width = image_shape

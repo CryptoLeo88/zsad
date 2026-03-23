@@ -54,6 +54,10 @@
     <figure><img src="{{ result.original_image }}" alt="原始图像" /><figcaption>原始图像</figcaption></figure>
     <figure><img src="{{ result.overlay_image }}" alt="异常热力图" /><figcaption>异常热力图</figcaption></figure>
   </div>
+  <div class="image-grid">
+    <figure><img src="{{ result.boxed_original_image }}" alt="原图框选结果" /><figcaption>原图框选结果</figcaption></figure>
+    <figure><img src="{{ result.boxed_overlay_image }}" alt="热力图框选结果" /><figcaption>热力图框选结果</figcaption></figure>
+  </div>
   <div class="note-box">
     <p>{{ result.explanation }}</p>
     <p>热力峰值：{{ result.heat_peak }}，平均响应：{{ result.heat_mean }}，主干网络：{{ result.record.backbone_name }}。</p>
