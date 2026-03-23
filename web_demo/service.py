@@ -346,12 +346,13 @@ class OpenVocabularyDefectSystem:
         heat = self._resize_heatmap(heat, original.shape[:2])
         overlay = self._build_overlay(original, heat)
         regions = self._extract_regions(heat, original.shape[:2])
+        regions = self._assign_region_terms(regions, defect_terms, heat)
         matched_terms, unknown_flag, explanation = self._match_terms(defect_terms, heat, regions, float(raw_result["score"]))
         overlay_name = f"{inspection_id}-overlay.png"
         boxed_original_name = f"{inspection_id}-boxed-original.png"
         boxed_overlay_name = f"{inspection_id}-boxed-overlay.png"
-        boxed_original = self._draw_regions(original, regions, "异常区域")
-        boxed_overlay = self._draw_regions(overlay, regions, "异常区域")
+        boxed_original = self._draw_regions(original, regions)
+        boxed_overlay = self._draw_regions(overlay, regions)
         Image.fromarray(overlay).save(self.output_dir / overlay_name)
         Image.fromarray(boxed_original).save(self.output_dir / boxed_original_name)
         Image.fromarray(boxed_overlay).save(self.output_dir / boxed_overlay_name)
@@ -477,7 +478,7 @@ class OpenVocabularyDefectSystem:
         blended = image_rgb.astype(np.float32) * 0.58 + color * 255.0 * 0.42
         return np.uint8(np.clip(blended, 0, 255))
 
-    def _draw_regions(self, image_rgb: np.ndarray, regions: List[Dict[str, Any]], label: str) -> np.ndarray:
+    def _draw_regions(self, image_rgb: np.ndarray, regions: List[Dict[str, Any]]) -> np.ndarray:
         canvas = Image.fromarray(image_rgb.copy())
         draw = ImageDraw.Draw(canvas)
         for idx, region in enumerate(regions, 1):
@@ -486,8 +487,10 @@ class OpenVocabularyDefectSystem:
             x1 = int(region["x"] + region["w"])
             y1 = int(region["y"] + region["h"])
             draw.rectangle([x0, y0, x1, y1], outline=(214, 48, 49), width=4)
-            text = f"{label}{idx}"
-            text_box = [x0, max(0, y0 - 26), x0 + 96, max(24, y0)]
+            region_term = region.get("matched_term", f"区域{idx}")
+            text = f"{region_term}{idx}"
+            box_width = max(96, 14 * len(text))
+            text_box = [x0, max(0, y0 - 26), x0 + box_width, max(24, y0)]
             draw.rectangle(text_box, fill=(214, 48, 49))
             draw.text((x0 + 8, max(2, y0 - 23)), text, fill=(255, 255, 255))
         return np.asarray(canvas, dtype=np.uint8)
@@ -532,6 +535,49 @@ class OpenVocabularyDefectSystem:
                 regions.append({"x": x0, "y": y0, "w": w, "h": h, "area_ratio": round(area_ratio, 3)})
         regions.sort(key=lambda item: item["area_ratio"], reverse=True)
         return regions[:3]
+
+    def _assign_region_terms(
+        self,
+        regions: List[Dict[str, Any]],
+        defect_terms: List[str],
+        heat: np.ndarray,
+    ) -> List[Dict[str, Any]]:
+        if not defect_terms:
+            defect_terms = self.vocab_store.term_names()
+        assigned = []
+        for idx, region in enumerate(regions):
+            term = self._match_single_region_term(region, defect_terms, heat, idx)
+            item = dict(region)
+            item["matched_term"] = term
+            assigned.append(item)
+        return assigned
+
+    def _match_single_region_term(
+        self,
+        region: Dict[str, Any],
+        defect_terms: List[str],
+        heat: np.ndarray,
+        idx: int,
+    ) -> str:
+        x0 = int(region["x"])
+        y0 = int(region["y"])
+        x1 = int(region["x"] + region["w"])
+        y1 = int(region["y"] + region["h"])
+        patch = heat[y0:y1, x0:x1]
+        patch_mean = float(np.mean(patch)) if patch.size else 0.0
+        aspect_ratio = max(region["w"], region["h"]) / max(min(region["w"], region["h"]), 1)
+        area_ratio = float(region["area_ratio"])
+        for term in defect_terms:
+            lower = term.lower()
+            if any(key in lower for key in ["scratch", "划痕", "裂纹", "crack"]) and aspect_ratio > 3:
+                return term
+            if any(key in lower for key in ["hole", "孔", "缺口", "凹坑"]) and 0.005 < area_ratio < 0.03:
+                return term
+            if any(key in lower for key in ["spot", "污", "脏", "stain", "污染"]) and patch_mean > 0.45:
+                return term
+        if defect_terms:
+            return defect_terms[idx % len(defect_terms)]
+        return f"区域"
 
     def _match_terms(
         self,

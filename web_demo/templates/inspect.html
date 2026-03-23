@@ -63,12 +63,12 @@
     <p>热力峰值：{{ result.heat_peak }}，平均响应：{{ result.heat_mean }}，主干网络：{{ result.record.backbone_name }}。</p>
   </div>
   <table>
-    <thead><tr><th>序号</th><th>左上角坐标</th><th>宽高</th><th>面积占比</th></tr></thead>
+    <thead><tr><th>序号</th><th>匹配词汇</th><th>左上角坐标</th><th>宽高</th><th>面积占比</th></tr></thead>
     <tbody>
       {% for region in result.regions %}
-      <tr><td>{{ loop.index }}</td><td>({{ region.x }}, {{ region.y }})</td><td>{{ region.w }} × {{ region.h }}</td><td>{{ region.area_ratio }}</td></tr>
+      <tr><td>{{ loop.index }}</td><td>{{ region.matched_term }}</td><td>({{ region.x }}, {{ region.y }})</td><td>{{ region.w }} × {{ region.h }}</td><td>{{ region.area_ratio }}</td></tr>
       {% else %}
-      <tr><td colspan="4">未检测到稳定异常区域。</td></tr>
+      <tr><td colspan="5">未检测到稳定异常区域。</td></tr>
       {% endfor %}
     </tbody>
   </table>
