@@ -1,0 +1,15 @@
+python run_all_tests_except_mvtec.py ^
+  --model_type visual_prompt_gate ^
+  --checkpoint_path .\checkpoint\noForzen\hsf_visual_prompt_gate_mix\epoch_15.pth ^
+  --results_root .\results\all_except_mvtec ^
+  --features_list 6 12 18 24 ^
+  --image_size 518 ^
+  --depth 9 ^
+  --n_ctx 12 ^
+  --t_n_ctx 4 ^
+  --metrics image-pixel-level ^
+  --sigma 4 ^
+  --visual_prompt_hidden_dim 0 ^
+  --visual_prompt_dropout 0.1 ^
+  --gate_hidden_dim 0 ^
+  --gate_dropout 0.1
