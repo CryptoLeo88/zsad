@@ -38,7 +38,8 @@ def setup_seed(seed: int) -> None:
     if torch is None:
         raise RuntimeError("Missing runtime dependency: torch")
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
@@ -50,6 +51,8 @@ def _synchronize(device: torch.device) -> None:
         raise RuntimeError("Missing runtime dependency: torch")
     if device.type == "cuda":
         torch.cuda.synchronize(device)
+    elif device.type == "mps" and hasattr(torch, "mps") and torch.backends.mps.is_available():
+        torch.mps.synchronize()
 
 
 def _compute_stats(samples: List[float]) -> Dict[str, float]:
@@ -232,11 +235,16 @@ def resolve_device(device_arg: str) -> torch.device:
     if device_arg == "auto":
         if torch.cuda.is_available():
             return torch.device("cuda:0")
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return torch.device("mps")
         return torch.device("cpu")
 
     device = torch.device(device_arg)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available, but a CUDA device was requested.")
+    if device.type == "mps":
+        if not hasattr(torch.backends, "mps") or not torch.backends.mps.is_available():
+            raise RuntimeError("MPS is not available, but an MPS device was requested.")
     return device
 
 
@@ -289,7 +297,13 @@ def benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         "checkpoint_path": str(Path(args.checkpoint_path).expanduser().resolve()),
         "image_path": image_path,
         "device": str(device),
-        "device_name": torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU",
+        "device_name": (
+            torch.cuda.get_device_name(device)
+            if device.type == "cuda"
+            else "Apple Silicon MPS"
+            if device.type == "mps"
+            else "CPU"
+        ),
         "image_size": args.image_size,
         "warmup": args.warmup,
         "repeat": args.repeat,
